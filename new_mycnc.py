@@ -1,9 +1,51 @@
 import cv2 ,numpy as np,openpyscad as ops
+
 ''' To do: To get exact place from user, to resize coordinates accordingly.
     Base milling to add text with opencv.
 '''
+class Crop:
+    """
+    Draws rect with mouse, to find coordinates and scale of text.
+    Operate:instance.main(pathRead,pathWrite)
+    parameters:
+    pathRead raw image
+    pathWrite cropped image
+    left button draws rectangle
+    right button return startX,endX,startY,endY
+    """
+
+    def draw_rect(self,event,x,y,flags,param):
+        # if event == cv2.EVENT_LBUTTONDOWN:
+        #     self.ix,self.iy = x,y
+        # elif event == cv2.EVENT_LBUTTONUP:
+        #     cv2.rectangle(self.img, (self.ix, self.iy), (x, y), (0, 255, 0), 1)
+        # elif event==cv2.EVENT_RBUTTONDBLCLK:
+        #     del(self.img)
+        #     self.img = cv2.imread(param)
+        # elif event==cv2.EVENT_RBUTTONDOWN:
+        #     sortx=sorted([x,self.ix])
+        #     sorty=sorted([y,self.iy])
+        #     self.span= int(sorty[0])//2,int(sorty[1])//2,int(sortx[0])//2,int(sortx[1])//2
+        if event == cv2.EVENT_LBUTTONDOWN:
+            self.x,self.y=int(x//2),int(y//2)
+    def main(self,img):
+        """
+        :param pathRead:
+        :param pathWrite:
+        :return:
+        """
+        self.img = cv2.resize(img,(img.shape[0]*2,img.shape[1]*2))
+        cv2.namedWindow('image')
+        cv2.setMouseCallback('image',self.draw_rect)
+        while True:
+            cv2.imshow('image',self.img)
+            self.k = cv2.waitKey(1) & 0xFF
+            if self.k == 27:
+                break
+        cv2.destroyAllWindows()
+        return self.x,self.y
 class Cnc:
-    def __init__(self,pic,txt,size,file):
+    def __init__(self,pic,file):
         '''
         Reads image and resizes it to the size of the raw block material 90,50
         Takes contours from image, and
@@ -14,16 +56,16 @@ class Cnc:
         self.width=50
         self.thick=15
         # Read image
-        orig = cv2.imread(pic)
+        self.orig = cv2.imread(pic)
         # If image orientation is portrait
-        if orig.shape[0]>orig.shape[1]:
+        if self.orig.shape[0]>self.orig.shape[1]:
             # Resize to portrait
-            self.im=cv2.resize(orig,(self.width,self.hight))
+            self.im=cv2.resize(self.orig,(self.width,self.hight))
             self.portrait=True
         # Else
         else:
             # Resize to landscape
-            self.im=cv2.resize(orig,(self.hight,self.width))
+            self.im=cv2.resize(self.orig,(self.hight,self.width))
             self.portrait=False
         # Convert image to gray.
         imgray = cv2.cvtColor(self.im, cv2.COLOR_BGR2GRAY)
@@ -49,28 +91,12 @@ class Cnc:
          G00 Z2.
          Z50.
          '''
-        self.txt4='''
-        module base(){        
-        '''
-        self.txt5='''
-        module t(t, size=%d, style="")
-    {
-        linear_extrude( 3 )
-    text(t, size, font=str("Liberation Sans", style), valign="center", halign="center");
-    };'''%(int(size))
-        self.txt6='''
-        module super(){
-    base();
-    translate([ %d, %d, %d])
-    color("purple")t("%s");
-};
-super();'''%(int(self.im.shape[1]/2), int(self.im.shape[0]/2),int(self.thick/2),txt)
-        self.txt7='''
+        self.txt7 = '''
          Z2.
          Z1.
          G01 Z-3. F105
         '''
-        self.txt=txt
+
 
     def show(self):
         '''
@@ -98,13 +124,30 @@ super();'''%(int(self.im.shape[1]/2), int(self.im.shape[0]/2),int(self.thick/2),
         # Flatten the chosen contour for milling.
         self.flat=np.array(self.contours[self.the_contour]).ravel()
 
-    def make_3Dprint(self):
+    def make_3Dprint(self,size,txt,x_start,y_start):
         '''
         Take chosen contour from show method, makes polygon with openscad from it,
         extrude it to desired thickness and writes it to a scad file.
         parameter: File name of output file.
         :return:
         '''
+        self.txt4 = '''
+                module base(){        
+                '''
+        self.txt5 = '''
+                module t(t, size=%d, style="")
+            {
+                linear_extrude( 3 )
+            text(t, size, font=str("Liberation Sans", style), valign="center", halign="center");
+            };''' % (int(size))
+        self.txt6 = '''
+                module super(){
+            base();
+            translate([ %d, %d, %d])
+            color("purple")t("%s");
+        };
+        super();''' % (x_start, y_start, int(self.thick / 2), txt)
+        self.txt = txt
        # Declare list of points.
         points = []
         # Loop all points of chosen contour.
@@ -144,15 +187,19 @@ super();'''%(int(self.im.shape[1]/2), int(self.im.shape[0]/2),int(self.thick/2),
             # Write Gcode for exit the milling block.
             w.write(self.txt3)
 
-    def make_txt(self):
-        size = cv2.getTextSize(self.txt, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 2)
+    def make_txt(self,x0,y0):
+        len_txt=len(self.txt)*4 #size of a letter in openscad
+        scale=1
+        size = cv2.getTextSize(self.txt, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+        while size[0][0]>len_txt:
+            scale-=0.1
+            size = cv2.getTextSize(self.txt, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
         if self.portrait==True:
             blank_image = np.zeros((self.hight, self.width, 3), np.uint8)
-            org=(int(self.width/2)-int(size[0][0]/2),int(self.hight/2)+int(size[0][1]/2))
         else:
             blank_image = np.zeros((self.width, self.hight, 3), np.uint8)
-            org=(int(self.hight/2)-int(size[0][0]/2),int(self.width/2)+int(size[0][1]/2))
-        ktav=cv2.putText(blank_image,self.txt,org,cv2.FONT_HERSHEY_SIMPLEX,0.5,(255,255,255),2)
+        org = (x0 - int(size[0][0] / 2), y0 + int(size[0][1] / 2))
+        ktav=cv2.putText(blank_image,self.txt,org,cv2.FONT_HERSHEY_SIMPLEX,scale,(255,255,255),2)
         imgray = cv2.cvtColor(ktav, cv2.COLOR_BGR2GRAY)
         # Threshold the image with correct threshold parameter.
         ret, self.thresh = cv2.threshold(imgray, 127, 255, cv2.THRESH_BINARY)
@@ -207,17 +254,25 @@ super();'''%(int(self.im.shape[1]/2), int(self.im.shape[0]/2),int(self.thick/2),
             # Write Gcode for exit the milling block.
             w.write(self.txt3)
 
+def main():
+    cnc=Cnc('/home/cimlab/Pictures/tau.jpeg','try')
+    # cnc=Cnc('C:/Users/cimlab/Pictures/TAU.jpg','GH')
+    cnc.show()
+    # # cnc.sketch('contour')
+    # cnc.make_3Dprint('balagan')
+    crop=Crop()
+    x,y=crop.main(cnc.orig)
+    if cnc.portrait==True:
+        w=50
+        h=90
+    else:
+        w=90
+        h=50
+    x0=int(x*w/cnc.orig.shape[0])
+    y0=int(y*h/cnc.orig.shape[1])
+    cnc.make_3Dprint(4,"Gad",x0,y0)
+    cnc.base()
+    # # cnc.smart_base()
+    cnc.make_txt(x,y)
 
-
-
-
-
-cnc=Cnc('/home/cimlab/Pictures/tau.jpeg','Holy shit',3,'try')
-# cnc=Cnc('C:/Users/cimlab/Pictures/TAU.jpg','GH')
-# cnc.show()
-# # cnc.sketch('contour')
-# cnc.make_3Dprint('balagan')
-cnc.base()
-# cnc.smart_base()
-cnc.make_txt()
-
+main()
