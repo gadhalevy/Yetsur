@@ -1,7 +1,7 @@
 import cv2 ,numpy as np,openpyscad as ops
 
-''' To do: To get exact place from user, to resize coordinates accordingly.
-    Base milling to add text with opencv.
+''' 
+Get disired place for ktav by mouse lbutton.
 '''
 class Crop:
     """
@@ -27,7 +27,7 @@ class Crop:
         #     sorty=sorted([y,self.iy])
         #     self.span= int(sorty[0])//2,int(sorty[1])//2,int(sortx[0])//2,int(sortx[1])//2
         if event == cv2.EVENT_LBUTTONDOWN:
-            self.x,self.y=int(x//2),int(y//2)
+            self.x,self.y=x,y
     def main(self,img):
         """
         :param pathRead:
@@ -43,7 +43,7 @@ class Crop:
             if self.k == 27:
                 break
         cv2.destroyAllWindows()
-        return self.x,self.y
+        return int(self.x/2),int(self.y/2)
 class Cnc:
     def __init__(self,pic,file):
         '''
@@ -188,23 +188,33 @@ class Cnc:
             w.write(self.txt3)
 
     def make_txt(self,x0,y0):
-        len_txt=len(self.txt)*4 #size of a letter in openscad
-        scale=1
-        size = cv2.getTextSize(self.txt, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+        len_txt=len(self.txt)*7 #size of a letter in openscad
+        scale=2
+        size = cv2.getTextSize(self.txt, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
         while size[0][0]>len_txt:
             scale-=0.1
-            size = cv2.getTextSize(self.txt, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+            size = cv2.getTextSize(self.txt, cv2.FONT_HERSHEY_SIMPLEX, scale, 1)
         if self.portrait==True:
             blank_image = np.zeros((self.hight, self.width, 3), np.uint8)
         else:
             blank_image = np.zeros((self.width, self.hight, 3), np.uint8)
+        # blank_image=np.zeros((size[0],size[1],3), np.uint8)
         org = (x0 - int(size[0][0] / 2), y0 + int(size[0][1] / 2))
-        ktav=cv2.putText(blank_image,self.txt,org,cv2.FONT_HERSHEY_SIMPLEX,scale,(255,255,255),2)
+        # print(x0,y0,org,scale)
+        ktav=cv2.putText(blank_image,self.txt,org,cv2.FONT_HERSHEY_SIMPLEX,scale,(255,255,255),1)
         imgray = cv2.cvtColor(ktav, cv2.COLOR_BGR2GRAY)
         # Threshold the image with correct threshold parameter.
         ret, self.thresh = cv2.threshold(imgray, 127, 255, cv2.THRESH_BINARY)
-        # cv2.imshow('f',self.ktav)
-        # cv2.waitKey(0)
+        cv2.imshow('s', self.thresh)
+        roi=self.thresh[org[1]-size[0][1]:org[1],org[0]:org[0]+size[0][0]]
+        roi=cv2.flip(roi,0)
+        self.thresh[org[1] - size[0][1]:org[1], org[0]:org[0] + size[0][0]]=roi
+        # M=cv2.getRotationMatrix2D((x0,y0),180,1)
+        # self.thresh=cv2.warpAffine(self.thresh,M,(self.thresh.shape[1],self.thresh.shape[0]))
+        cv2.imshow('f',self.thresh)
+        # # self.thresh = cv2.flip(self.thresh, 0)
+        # # cv2.imshow('f', self.thresh)
+        cv2.waitKey(0)
         self.base(True)
 
 
@@ -225,7 +235,8 @@ class Cnc:
         # Open file for writing.
         with open(self.file,'a') as w:
             # Write initial milling code
-            w.write(self.txt1)
+            if kituv==False:
+                w.write(self.txt1)
             # Loop x axis
             for x in range(self.thresh.shape[0]):
                 # Loop y axis
@@ -262,6 +273,7 @@ def main():
     # cnc.make_3Dprint('balagan')
     crop=Crop()
     x,y=crop.main(cnc.orig)
+    print('x=',x,'y=',y)
     if cnc.portrait==True:
         w=50
         h=90
@@ -270,9 +282,10 @@ def main():
         h=50
     x0=int(x*w/cnc.orig.shape[0])
     y0=int(y*h/cnc.orig.shape[1])
+    print('x0=',x0,'y0=',y0)
     cnc.make_3Dprint(4,"Gad",x0,y0)
     cnc.base()
     # # cnc.smart_base()
-    cnc.make_txt(x,y)
+    cnc.make_txt(x0,y0)
 
 main()
